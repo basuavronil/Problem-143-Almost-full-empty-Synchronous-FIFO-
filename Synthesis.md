@@ -1,81 +1,66 @@
-# 1. Timings
-## Implementation Setup
+<img width="570" height="99" alt="image" src="https://github.com/user-attachments/assets/c2165f66-c10f-4907-b560-4356875e4aa0" />
 
-| Item | Value |
-|---|---|
-| Tool | Vivado 2024.2 |
-| Target device | `xc7a12ticsg325-1L` (Artix-7) |
-| Speed grade | -1L |
-| Flow | Synthesis, then implementation (routed) |
+<img width="608" height="127" alt="image" src="https://github.com/user-attachments/assets/105dfacc-3280-452e-a748-a95029efe3aa" />
 
-## Clock Constraint
-| Clock | Port | Period | Frequency | Waveform |
-|---|---|---|---|---|
-| `clk` | `clk` | 10.000 ns | 100 MHz | rise at 0.000 ns, fall at 5.000 ns |
+<img width="476" height="206" alt="image" src="https://github.com/user-attachments/assets/248a7663-a1e9-493b-8a83-5e92cfd85fa8" />
 
-Constraints file (`sync_fifo.xdc`):
-```tcl
-# 100 MHz clock (10 ns period)
-create_clock -period 10.000 -name clk [get_ports clk]
+# Implementation & Post-Route Analysis (`xc7a12ticsg325-1L`)
 
-# Reset is asynchronous, so exclude it from timing analysis
-set_false_path -from [get_ports rst]
-```
+* **Project Name:** `Almost_EF_Sync_FIFO`
+* **Top Module:** `sync_fifo`
+* **Product Family:** Xilinx Artix-7 (Low-Power `-1L` Speed Grade)
+* **Target Part:** `xc7a12ticsg325-1L`
+* **Target Language:** Verilog
 
-## Timing Summary
+---
 
-**Result: all user specified timing constraints are met.**
+## 1. Timing Analysis (Post-Route STA)
 
-### Setup
+All user-specified timing constraints are met with zero failing endpoints across Setup, Hold, and Pulse Width checks:
 
-| Metric | Value |
-|---|---|
-| Worst Negative Slack (WNS) | **5.584 ns** |
-| Total Negative Slack (TNS) | 0.000 ns |
-| Number of failing endpoints | 0 |
-| Total number of endpoints | 164 |
+| Timing Check | Metric | Value | Status / Notes |
+| :--- | :--- | :--- | :--- |
+| **Setup** | **Worst Negative Slack (WNS)** | **`+5.584 ns`** | Met ($\text{WNS} \ge 0\text{ ns}$) |
+| **Setup** | Total Negative Slack (TNS) | `0.000 ns` | `0` failing endpoints (out of `164`) |
+| **Hold** | **Worst Hold Slack (WHS)** | **`+0.236 ns`** | Met ($\text{WHS} \ge 0\text{ ns}$) |
+| **Hold** | Total Hold Slack (THS) | `0.000 ns` | `0` failing endpoints (out of `164`) |
+| **Pulse Width** | **Worst Pulse Width Slack (WPWS)** | **`+4.500 ns`** | Met ($\text{WPWS} \ge 0\text{ ns}$) |
+| **Pulse Width** | Total Pulse Width Negative Slack (TPWS) | `0.000 ns` | `0` failing endpoints (out of `147`) |
 
-### Hold
+### Maximum Operating Frequency ($F_{\max}$)
+* Assuming a **10.000 ns** (`100 MHz`) target clock constraint (consistent with $\text{WPWS} = 4.500\text{ ns}$):
+  $$T_{\min} = T_{\text{target}} - \text{WNS} = 10.000\text{ ns} - 5.584\text{ ns} = 4.416\text{ ns}$$
+  $$F_{\max} = \frac{1}{4.416\text{ ns}} \approx \mathbf{226.45\text{ MHz}}$$
 
-| Metric | Value |
-|---|---|
-| Worst Hold Slack (WHS) | **0.236 ns** |
-| Total Hold Slack (THS) | 0.000 ns |
-| Number of failing endpoints | 0 |
-| Total number of endpoints | 164 |
+---
 
-### Pulse Width
+## 2. Power Analysis (Post-Implementation)
 
-| Metric | Value |
-|---|---|
-| Worst Pulse Width Slack (WPWS) | **4.500 ns** |
-| Total Pulse Width Negative Slack (TPWS) | 0.000 ns |
-| Number of failing endpoints | 0 |
-| Total number of endpoints | 147 |
+Power estimation derived from the post-implementation netlist under typical process conditions:
 
-### At a Glance
+| Power Category | Power (W) | Share (%) | Breakdown / Notes |
+| :--- | :--- | :--- | :--- |
+| **Total On-Chip Power** | **0.065 W** | **100%** | Junction Temp: **25.3 °C** \| Thermal Margin: **74.7 °C (14.1 W)** |
+| **Device Static Power** | **0.059 W** | **90%** | Transistor leakage and baseline IP bias current (`-1L` low-power silicon) |
+| **Dynamic Power** | **0.006 W** | **10%** | Active switching power across clocks, signals, logic, and I/O |
+| ↳ *I/O* | *0.005 W* | *75% of Dynamic* | External pin switching and load capacitance across 24 bonded IOBs |
+| ↳ *Clocks* | *0.001 W* | *9% of Dynamic* | Global clock tree distribution (`BUFGCTRL`) |
+| ↳ *Signals* | *0.001 W* | *9% of Dynamic* | Interconnect / routing net transitions |
+| ↳ *Logic* | *<0.001 W* | *7% of Dynamic* | LUT and flip-flop switching |
 
-| Check | Slack | Failing endpoints | Status |
-|---|---|---|---|
-| Setup | +5.584 ns | 0 / 164 | Met |
-| Hold | +0.236 ns | 0 / 164 | Met |
-| Pulse width | +4.500 ns | 0 / 147 | Met |
+> **Engineering Takeaway:** Because `sync_fifo` is a compact datapath module occupying under 1.3% of the fabric, **90% (0.059 W)** of total on-chip power is baseline static power, while active dynamic switching consumes just **0.006 W** (driven primarily by external I/O pin transitions).
 
-## Interpretation
-- **Setup:** the worst path has 5.584 ns of slack against the 10 ns period. The longest path takes roughly 4.4 ns, so the design could run at about 226 MHz on this device (estimate: 1 / (10 - 5.584) ns).
-- **Hold:** the worst hold slack is positive (0.236 ns), so no hold violations exist.
-- **Pulse width:** positive slack (4.500 ns), so the minimum clock pulse width requirements are met.
-- A positive slack means the constraint is met. A negative slack would indicate a violation.
+---
 
-## Notes
-- Timing was run with the clock constraint only. Input and output delay constraints were not applied, so the results cover internal register-to-register paths. This is appropriate when the FIFO is used as a block inside a larger design.
-- If the FIFO ports are connected directly to chip pins, add `set_input_delay` and `set_output_delay` constraints that match your board. With a 10 ns clock and 2 ns I/O delays on this device, the output paths failed, so a slower clock (about 15 ns) would be needed.
+## 3. Resource Utilization
 
-## Files
+Post-implementation utilization for `sync_fifo` on the `xc7a12ticsg325-1L` device:
 
-| File | Description |
-|---|---|
-| `sync_fifo.v` | FIFO RTL |
-| `tb_sync_fifo.v` | Self-checking testbench |
-| `sync_fifo.xdc` | Timing constraints |
-
+| Resource | Used | Available (`xc7a12t`) | Utilization (%) |
+| :--- | :--- | :--- | :--- |
+| **Slice LUTs** | `75` | `8,000` | **0.94%** |
+| ↳ *LUT as Logic* | `75` | `8,000` | **0.94%** |
+| **Slice Registers (Flip-Flops)** | `146` | `16,000` | **0.91%** |
+| **Occupied Slices** | `47` | `3,650` | **1.29%** |
+| **Bonded IOBs** | `24` | `150` | **16.00%** |
+| **BUFGCTRL (Global Clock Buffers)** | `1` | `32` | **3.13%** |
