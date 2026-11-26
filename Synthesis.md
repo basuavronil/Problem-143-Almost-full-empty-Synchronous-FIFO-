@@ -1,4 +1,4 @@
-# Timings
+# 1. Timings
 ## Implementation Setup
 
 | Item | Value |
